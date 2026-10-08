@@ -1,0 +1,102 @@
+# Sanitised ~/.ssh/config — annotating the split-alias design.
+#
+# Placeholders:
+#   jump-a / jump-b   203.0.113.10 / 198.51.100.20   (RFC 5737 doc ranges)
+#   desk-win          203.0.113.40                    a Windows box
+#   workstation       198.51.100.30                  the machine you sit at
+#
+# Replace with your own. Do NOT publish a config with real internal addresses.
+
+# --- Host A ---------------------------------------------------------------
+# Owns every RemoteForward. Used ONLY by reverse-tunnel.service.
+# Deliberately NO ControlMaster/ControlPath/ControlPersist — see README §2.
+
+Host jump-a-tunnel
+  HostName 203.0.113.10
+  User tunnel
+  BatchMode yes
+
+  # A regular HTTP/SOCKS proxy running on your workstation (the client side).
+  # 7897 and 17899 are two names for the same target; keep both only if some
+  # tool already hardcodes one of them.
+  RemoteForward 127.0.0.1:7897  localhost:19674
+  RemoteForward 127.0.0.1:17899 localhost:19674
+
+  # RDP, reached from the workstation
+  RemoteForward 127.0.0.1:3390 localhost:3389
+  RemoteForward 127.0.0.1:3391 localhost:3390
+
+  # SSH on the jump host itself, and on two other boxes behind the workstation
+  RemoteForward 127.0.0.1:3622 localhost:22
+  RemoteForward 127.0.0.1:2522 workstation:22
+  RemoteForward 127.0.0.1:3522 203.0.113.35:22
+  RemoteForward 127.0.0.1:4022 desk-win:22
+  RemoteForward 127.0.0.1:4390 desk-win:3389
+
+  ExitOnForwardFailure yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+
+# Interactive login to host A. Multiplexes; forwards NOTHING. Before this split,
+# logging in and the service fought over the same binds.
+Host 203.0.113.10
+  HostName 203.0.113.10
+  User tunnel
+  BatchMode yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%r@%h-%p
+  ControlPersist 30m
+
+# Proxy-only alias: same host, different purpose, and critically a DIFFERENT
+# ControlPath — sharing the default one would make the two masters fight.
+# 7890 here, not 7897/17899: those belong to the service above.
+Host jump-a-proxy
+  HostName 203.0.113.10
+  User tunnel
+  BatchMode yes
+  RemoteForward 127.0.0.1:10808 localhost:19674
+  ExitOnForwardFailure yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%r@%h-proxy-%p
+  ControlPersist 30m
+
+# --- Host B — same shape, independent service ------------------------------
+
+Host jump-b-tunnel
+  HostName 198.51.100.20
+  User tunnel
+  BatchMode yes
+  RemoteForward 127.0.0.1:7897  localhost:19674
+  RemoteForward 127.0.0.1:3389  localhost:3389
+  RemoteForward 127.0.0.1:3390  localhost:3390
+  RemoteForward 127.0.0.1:2222  localhost:22
+  ExitOnForwardFailure yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+
+Host 198.51.100.20
+  HostName 198.51.100.20
+  User tunnel
+  BatchMode yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%r@%h-%p
+  ControlPersist 30m
+
+# --- Plain interactive host ------------------------------------------------
+# Nothing special; just a normal mux config for a box you log into.
+
+Host desk-win
+  HostName 203.0.113.40
+  User tunnel
+  TCPKeepAlive yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 10
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%r@%h-%p
+  ControlPersist 30m

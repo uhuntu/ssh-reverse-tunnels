@@ -1,0 +1,27 @@
+[Unit]
+Description=SSH reverse tunnel (service-owned forwards)
+Documentation=https://github.com/yourname/ssh-reverse-tunnels
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# The alias below MUST NOT contain ControlMaster/ControlPath/ControlPersist,
+# and MUST contain ExitOnForwardFailure yes. See README §2 and §3.
+ExecStart=/usr/bin/ssh -NT jump-a-tunnel
+
+# Retry forever. Without StartLimitIntervalSec=0 systemd gives up after
+# StartLimitBurst failures within StartLimitInterval and leaves the unit dead,
+# which is how a momentary network blip becomes a month-old broken tunnel.
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+# A clean shutdown so ssh sends the channel-close instead of leaving the
+# peer to time out.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
